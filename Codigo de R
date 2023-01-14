@@ -1,0 +1,1145 @@
+---
+title: "Análisis de supervivencia"
+author: 'Gómez Rodríguez Angel Giovanni'
+date: "17 de diciembre de 2021"
+output:
+  pdf_document:
+    keep_tex: yes
+  html_document:
+    df_print: paged
+  word_document: default
+header-includes:
+- \usepackage[spanish]{babel}
+- \usepackage[utf8]{inputenc}
+- \decimalpoint
+- \usepackage{booktabs}
+- \usepackage{longtable}
+- \usepackage{array}
+- \usepackage{multirow}
+- \usepackage{wrapfig}
+- \usepackage{float}
+- \usepackage{colortbl}
+- \usepackage{pdflscape}
+- \usepackage{tabu}
+- \usepackage{threeparttable}
+- \usepackage{threeparttablex}
+- \usepackage[normalem]{ulem}
+- \usepackage{makecell}
+- \usepackage{xcolor}
+- \usepackage{soul}
+- \usepackage{polynom}
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\newpage
+
+# Introducción.
+
+El análisis de supervivencia corresponde a un conjunto de enfoques estadísticos utilizados para investigar el tiempo que tarda en ocurrir un evento de interés.
+
+El análisis de supervivencia se utiliza en una variedad de campos, uno de ellos son
+estudios de cáncer para análisis de tiempo de supervivencia de pacientes.
+
+En los estudios sobre el cáncer, las preguntas de investigación típicas son las siguientes:
+
+- ¿Cuál es el impacto de ciertas características clínicas en la supervivencia del paciente?
+
+- ¿Cuál es la probabilidad de que un individuo sobreviva ciertos años?
+
+- ¿Existen diferencias en la supervivencia entre grupos de paciente?
+
+Algunas de esas preguntas se verán a continuación.
+
+\newpage
+
+
+# \colorbox{yellow}{1. Elija una base de datos para hacer un análisis de supervivencia.}
+
+Para efectos de este proyecto, se seleccionó el conjunto de datos $colon$ del paquete 
+$Survival$.
+
+# \colorbox{yellow}{2. Características de la base de datos.}
+
+```{r, echo = TRUE, message = FALSE, include = FALSE, warning = FALSE}
+# Se cargan las librerías necesarias
+library(survminer)
+library(survival)
+library(KMsurv)
+library(ggsci)
+library(scales)
+library(dplyr)
+library(tidyverse)
+data("colon")
+# Se establece la Base de colon (BD)
+colon <- arrange(colon, time)
+# Para acceder a los objetos de la BD solo con el nombre se usa attach
+attach(colon) 
+```
+
+
+## \colorbox{cyan}{Análisis descriptivo del tiempo de supervivencia de los sujetos.}
+
+Lo siguiente es un extracto de la base de datos seleccionada.
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+require(knitr)
+kable(colon[1:15,1:8], digits = 3, row.names = FALSE, align = "c",
+caption = NULL)
+
+kable(colon[1:15,9:16], digits = 3, row.names = FALSE, align = "c",
+caption = NULL)
+```
+
+Estos son datos de uno de los primeros ensayos exitosos de quimioterapia adyuvante 
+(es decir, que se administra de manera complementaria después del tratamiento principal)
+para tratar el cáncer de colon. 
+
+Como ya se explicó anteriormente, el levamisol es un compuesto de baja toxicidad utilizado
+anteriormente para tratar infestaciones de gusanos en animales; Por otro lado, el 5-FU es
+un agente de quimioterapia moderadamente tóxico (como sucede con este tipo de terapias). 
+
+
+### \colorbox{cyan}{Número de observaciones.}
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center'}
+length(colon$id)
+```
+
+En total son 1858 observaciones, es decir, hay 1858 pacientes registrados en la base 
+$colon$.
+
+### \colorbox{cyan}{Datos faltantes}
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center'}
+sum(is.na.data.frame(colon))
+```
+
+Se puede apreciar que si existen NA, por tanto la base $colon$ si tiene algunos datos
+faltantes. Veremos si esto no afecta en los siguientes pasos.
+
+### \colorbox{cyan}{Variables involucradas.}
+
+La base de datos $colon$ tiene 16 columnas, cada una con una variable distinta:
+
+- La variable $id$, la cual denota la	identificación del paciente
+
+- La variable $study$, que denota que el paciente está dentro del estudio. En todos
+  los pacientes se cumple que $study = 1$
+  
+- La variable $rx$ denota la prescripción o el tratamiento establecido para cada 
+paciente. En donde:
+
+  * $Obs$ indica que el paciente está en observación. Después se denotará la variable
+  por un 0.
+
+  * $Lev$ indica que al paciente se le administra levamisol. Posteriormente, se denotará
+  esta variable por un 1.
+
+  * $Lev + 5FU$ indica que al paciente se le administra levamisol + 5FU. Esta variable 
+  después se denotará por un 2.
+  
+- La variable $sex$ indica el sexo del paciente. 
+
+  * El sexo femenino se denota por el 0.
+
+  * El sexo masculino se denota por el 1.
+
+- La variable $age$ denota los años de cada paciente.
+
+- La variable $obstruct$ indica si existe una obstrucción del colon por tumor:
+
+  * Si no hay obstrucción, se denota por un 0.
+
+  * Si existe obstrucción, se denota por el 1.
+
+- La variable $perfor$  indica si hay perforación de colon en el paciente:
+
+  * Si no existe perforación, se denota por un 0.
+
+  * Si hay perforación de colon, se denota por el 1.
+
+- La variable $adhere$ indica si el cáncer de colon pudo adherirse a órganos cercanos.
+
+  * Si no existe adherencia, se denota por 0.
+
+  * Si hay adherencia a órganos cercanos, se denota por 1.
+
+- La variable $nodes$ indica  el número de ganglios linfáticos, que son parte del sistema
+  inmunológico que tienen un cáncer detectable.
+  
+- La variable $time$ indica los días hasta un fallo o censura.
+
+- La variable $status$  indica el estado del paciente. En este caso se denota por:
+
+  * Si el paciente está vivo se denota por un 0.
+
+  * Si el paciente muere, se denota por el 1.
+
+- La variable $differ$ denota el grado del tumor:
+
+  * El 1 denota un tumor benigno.
+
+  * El 2 denota un tumor moderado.
+
+  * El 3 denota un tumor maligno.
+
+- La variable $extent$ denota la extensión de la diseminación local, es decir se 
+  hacen metástasis, cuando las células cancerosas se desprenden del tumor original y 
+  viajan por el torrente sanguíneo o por el sistema linfático a otras partes del organismo:
+
+  * El 1 indica que afecta a la submucosa.
+
+  * El 2 indica que el músculo ha sido afectado.
+
+  * El 3 indica que el tumor afectó la serosa, que es la capa más externa del tubo digestivo.
+
+  * El 4 indica que el tumor afectó estructuras contiguas, es decir otros órganos.
+
+- La variable $surg$ indica el tiempo desde la cirugía de colon hasta el registro:
+
+  * El número 0 es si ha transcurrido un tiempo corto.
+
+  * El 1 se ocupa para denotar que ha transcurrido un tiempo largo.
+
+- La variable $node4$ indica si existen más de 4 ganglios linfáticos positivos.
+
+- La variable $etype$ indica el tipo de evento que pasa:
+
+  * Si hay recurrencia se denota por el 1.
+
+  * Si el paciente muere, se denota por el 2.
+  
+### \colorbox{cyan}{Algunas características de las variables involucradas.}
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center'}
+summary(colon$age)
+```
+
+En este caso se puede apreciar que los pacientes incluidos en la BD tienen un rango 
+de edad al momento del estudio de cáncer que va desde los 18 hasta los 85 años.
+Finalmente, en promedio de edad de pacientes con cáncer es de 59-60 años.
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center'}
+summary(colon$nodes)
+```
+
+Se muestra que existen 36 pacientes que no tienen registro de datos de ganglios 
+linfáticos afectados. Además se registra que el número máximo de nodos afectados es 
+de 33. Para finalizar, el promedio de ganglios afectados es de entre 3 y 4.
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center'}
+summary(colon$time)
+```
+
+El mínimo de días que tienen los pacientes para fallo o censura tras el estudio es de 8
+días, mientras que el máximo de días desde el estudio hasta una falla o censura es de
+3339 días. En promedio se registran 1538 días desde el estudio hasta el fallo o
+censura en los pacientes.
+
+### \colorbox{cyan}{Censuras y fallas.}
+
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 3, fig.width=6}
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+fallas <- table(colon$status)
+names(fallas)<-c('Censura','Falla')
+b <- barplot(fallas,col= c("#006B3C", "#E30022"),
+main="Gráfica de barras: Censuras y fallas", col.main="black",
+ylab="Frecuencia absoluta", col.lab="black")
+text(x=b,y=c(fallas), labels=c(fallas), pos=3, cex=1,
+xpd=TRUE)
+```
+
+
+### \colorbox{cyan}{Grado del tumor.}
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 3.5, fig.width=5}
+etapa <- table(differ) 
+par(cex.lab=0.8, cex.axis= 0.8, cex.main=0.9)
+names(etapa) <- c("Benigno","Moderado", "Maligno")
+b <- barplot(etapa, col=c("#E97451", "#CC5500", "#8A3324"),
+     main="Gráfica de barras: Grado del tumor", 
+     ylab="Frecuencia absoluta")
+text(x=b,y=c(etapa), labels=c(etapa), pos=3, cex=1,xpd=TRUE)
+```
+
+\newpage
+
+## \colorbox{cyan}{Obtenga la estimación de Kaplan-Meier y grafique.}
+
+A continuación, se muestra un breve resumen de las curvas de supervivencia y se imprime
+el número de observaciones, el número de eventos, la mediana de supervivencia y los 
+intervalos de confianza para la mediana.
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survObject <- Surv(colon$time, colon$status)
+fit <- survfit(survObject ~ 1, type = "kaplan-meier", conf.type = "plain", 
+               conf.int = 0.95)
+fit
+```
+
+
+Para el cálculo de la función de supervivencia $S(t)$ la información se encuentra
+en el apartado $survival$, además se muestra un resumen de las curvas de supervivencia
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+summary(fit) 
+```
+
+Para visualizar todas las observaciones, se tiene:
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=7}
+
+general<-as.data.frame(cbind(colon$time, colon$status))
+
+ggsurvplot(fit, data = general,
+          conf.int = FALSE,
+          risk.table = FALSE, 
+          linetype = 1, 
+          surv.median.line = "hv", 
+          ggtheme = theme_bw(), 
+          palette = "#2E9FDF", 
+          legend.title = "Estimación de Kaplan-Meier", 
+          legend.labs = "Todos",
+          cumevents = FALSE, 
+          cumcensor = FALSE,
+          tables.height = 0.01,
+          xlab = "Tiempo", ylab = "Probabilidad de supervivencia")
+```
+
+Para visualizar todas las observaciones, pero con un intervalo de confianza, se tiene:
+
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 10, fig.width=7}
+
+general<-as.data.frame(cbind(colon$time, colon$status))
+
+ggsurvplot(fit, data = general,
+          conf.int = TRUE,
+          risk.table = FALSE, 
+          linetype = 1, 
+          surv.median.line = "hv", 
+          ggtheme = theme_bw(), 
+          palette = "#2E9FDF", 
+          legend.title = "Estimación de Kaplan-Meier", 
+          legend.labs = "Todos",
+          cumevents = FALSE, 
+          cumcensor = FALSE,
+          tables.height = 1,
+          xlab = "Tiempo", ylab = "Probabilidad de supervivencia")
+```
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+colon$rx<-as.numeric(colon$rx)
+class(colon$status_survival)
+```
+
+Ahora, también se puede ajustar curvas de supervivencia complejas usando la combinación 
+de múltiples factores. A continuación se da una prueba de ello:
+
+```{r, echo = FALSE, message = FALSE, include = FALSE, warning = FALSE}
+fit2 <- survfit(Surv(time, status) ~ sex + rx + adhere,
+                data = colon )
+```
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 10, fig.width= 9}
+
+ggsurv <- ggsurvplot(fit2, fun = "event", conf.int = TRUE,
+                     ggtheme = theme_bw())
+ggsurv$plot +theme_bw() + 
+  theme (legend.position = "right")+
+  facet_grid(rx ~ adhere)
+```
+
+
+## \colorbox{cyan}{Identifique las variables que afectan el tiempo de supervivencia.}
+
+
+### \colorbox{cyan}{Manera exploratoria.}
+
+#### \colorbox{cyan}{Gráfica de pares.}
+
+
+En la siguiente gráfica de pares, se puede observa cómo se relacionan todas las variables de 
+la base de datos. 
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 10, fig.width=9}
+col1 <- ifelse(colon$status== '0', 'purple', 'red')
+pairs(colon, main="Grafico para visualizar como se relacionan las variables", col= col1, pch=19)
+```
+
+De este grafico se pueden seleccionar las gráficas con la menor superposicion entre
+los estados. 
+
+Respecto a la gráfica de pares, se tiene:
+
+- La variable $id$, no se considera ya que solo es una identificación para cada paciente
+  y no afecta al tiempo de supervivencia.
+
+- La variable $study$ no se considera pues en todos es 1.
+
+- Las demás variables si están relacionadas unas con otras.
+
+Gráficamente se puede decir que son variables que afectan al tiempo de supervivencia.
+
+
+#### \colorbox{cyan}{Correlación.}
+
+También se puede emplear la estadistica descriptiva para ver cómo se comporta la 
+correlación de las variables con el tiempo de supervivencia:
+
+```{r, echo = FALSE, message = FALSE, include = FALSE, warning = FALSE}
+colon$rx<-as.numeric(colon$rx)
+class(colon$status_survival)
+```
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+cor(colon)
+```
+
+Se puede observar que 
+
+- Las variables $study$, $nodes$ y $differ$ no presentan correlación con otras.
+
+
+### \colorbox{cyan}{Manera formal.}
+
+Ahora, se realizarán las respectivas pruebas que contrastan las hipótesis:
+$$ H_0: S_j(t) = S_k(t) \text{ Para toda } t>0  \text{ y para toda j, k} $$ 
+
+$$vs$$     
+
+$$H_a: S_j(t) \neq S_k(t) \text{ para alguna } t>0 \text{ y para alguna } j \neq t$$
+
+Ahora se aplicará a cada variable:
+
+### \colorbox{cyan}{Por sexo.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$sex), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value = 0.6 > 0.05 = \alpha$ por lo que se acepta $H_0$,  es decir, no existe 
+evidencia estadística de que las supervivencias sean distintas por sexo.
+
+\newpage
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$sex), rho = 1, data = colon)
+```
+
+Se obtiene un $p-value = 0.4 > 0.05 = \alpha$, por tanto no se cuenta con evidencia 
+suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia no es distinta en ambos sexos. 
+
+Así, el sexo no es una variable que influye en la supervivencia.
+
+
+
+### \colorbox{cyan}{Por prescripción.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$rx), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value = 5e^{-8}< 0.05 = \alpha$ por lo que no se acepta $H_0$,  es decir, 
+que si existe evidencia estadística de que las supervivencias sean distintas según su 
+prescripción.
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$rx), rho = 1, data = colon)
+```
+
+Se obtiene un $p-value = e^{-7} < 0.05 = \alpha$, por tanto si hay evidencia 
+suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia  es distinta para diferentes 
+prescripciones. 
+
+De esta manera, la prescripción  es una variable que influye en la supervivencia.
+
+
+### \colorbox{cyan}{Por edad.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$age), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value = 3e^{-11} < 0.05 = \alpha$ por lo que no se acepta $H_0$, 
+es decir, existe evidencia estadística que indica que la supervivencia es distinta
+según la edad.
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$age), rho = 1, data = colon)
+```
+
+Se obtiene un $p-value = e^{-8}< 0.05 = \alpha$, por tanto si se cuenta con evidencia 
+suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia  es distinta según la edad. 
+
+Así, la edad si es una variable que afecta la supervivencia.
+
+
+### \colorbox{cyan}{Por obstrucción.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$obstruct), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value = 0.003 < 0.05 = \alpha$ por lo que no se acepta $H_0$, es decir, hay evidencia estadística de que las supervivencias son distintas entre las personas 
+que presentan obstrucción y las que no.
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$obstruct), rho = 1, data = colon)
+```
+
+Se obtiene un $p-value = 4e^{-4} < 0.05 = \alpha$, por tanto si se cuenta con evidencia 
+estadística suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia  es distinta entre personas que tienen
+obstrucción de colon y las que no.
+
+Por lo  tanto, la obstrucción si es una variable que influye en la supervivencia.
+
+
+### \colorbox{cyan}{Por perforación.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$perfor), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value = 0.1 > 0.05 = \alpha$ por lo que se acepta $H_0$,  es decir, no existe 
+evidencia estadística de que las supervivencias sean distintas si hay perforación.
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$perfor), rho = 1, data = colon)
+```
+
+Se obtiene un $p-value = 0.2 > 0.05 = \alpha$, por tanto no se cuenta con evidencia 
+suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia no es distinta en entre personas que 
+tienen perforación y las que no.
+
+Por lo tanto, la perforación no es una variable que influye en la supervivencia.
+
+
+### \colorbox{cyan}{Por adherencia.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$adhere), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value = 3e^{-4} < 0.05 = \alpha$ por lo que se acepta $H_0$,  es decir,
+hay evidencia estadística de que las supervivencias son distintas entre las personas que
+presentan adherencia y las que no.
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$adhere), rho = 1, data = colon)
+```
+
+Se obtiene un $p-value = 8e^{-4} < 0.05 = \alpha$, por tanto si se cuenta con evidencia 
+suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia es distinta entre las personas que tienen
+adherencia del cáncer en otros órganos y las que no.
+
+Por lo tanto, la adherencia si es una variable que influye en la supervivencia.
+
+
+### \colorbox{cyan}{Por número de ganglios con cáncer.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$nodes), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value \leq 2e^{-16} < 0.05 = \alpha$ por lo que no se acepta $H_0$,  es decir, si existe  evidencia estadística de que las supervivencias son distintas según el 
+número de ganglios con cáncer.
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$nodes), rho = 1, data = colon)
+```
+
+Se obtiene un $p-value \leq 2e^{-16} > 0.05 = \alpha$, por tanto, se cuenta con evidencia 
+suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia  es distinta en cada persona según el
+número de ganglios afectados.
+
+Por lo tanto, el número de ganglios si es una variable que influye en la supervivencia.
+
+
+### \colorbox{cyan}{Por el estado del paciente.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$status), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value \leq 2e^{-16} < 0.05 = \alpha$ por lo que no se acepta $H_0$,  
+es decir, existe evidencia estadística de que las supervivencias son distintas según
+el estado en el que se encuentra el paciente.
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$status), rho = 1, data = colon)
+```
+
+Se obtiene un $p-value \leq 2e^{-16} < 0.05 = \alpha$, por tanto  se cuenta con evidencia 
+suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia cambia en los pacientes según su estad
+
+Por tanto, el  estado de los pacientes  es una variable que influye en la supervivencia.
+
+
+
+### \colorbox{cyan}{Por la gravedad del tumor.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$differ), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value = 3e^{-7} < 0.05 = \alpha$ por lo que no se acepta $H_0$,  es 
+decir, si existe  evidencia estadística de que las supervivencias son distintas según 
+la gravedad del tumor.
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$differ), rho = 1, data = colon)
+```
+
+Se obtiene un $p-value = 3e^{-10} < 0.05 = \alpha$, por tanto si se cuenta con evidencia 
+suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia  es distinta según la gravedad del tumor.
+
+Por lo  tanto, la gravedad del tumor  es una variable que influye en la supervivencia.
+
+
+
+### \colorbox{cyan}{Por la extensión de la diseminación local.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$extent), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value = 2e^{-12} < 0.05 = \alpha$ por lo que no se acepta $H_0$,  
+es decir, si existe evidencia estadística de que las supervivencias son distintas según
+la extensión del tumor.
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$extent), rho = 1, data = colon)
+```
+
+Se obtiene un $p-value = 8e^{-13} < 0.05 = \alpha$, por tanto  se cuenta con evidencia 
+suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia  es distinta entre las personas a las que
+se les extendió el cáncer y las que no. 
+
+Por lo tanto, la extensión del cáncer es una variable que influye en la supervivencia.
+
+
+### \colorbox{cyan}{Por el tiempo transcurrido desde la cirugía.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$surg), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value = 6e^{-4} < 0.05 = \alpha$ por lo que no se acepta $H_0$,  
+es decir, si hay evidencia estadística de que las supervivencias según el tiempo
+transcurrido de la cirugía y el estudio, influyen en la supervivencia.
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$surg), rho = 1, data = colon)
+```
+
+Se obtiene un $p-value = 0.001 < 0.05 = \alpha$, por tanto  se cuenta con evidencia 
+suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia cambia según el tiempo transcurrido
+entre la cirugía y el estudio del paciente.
+
+Por lotanto, el tiempo desde la cirugía si es una variable que influye en la supervivencia.
+
+
+### \colorbox{cyan}{Si el número de ganglios con cáncer es mayor a 4.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$node4), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value \leq 2e^{-16} < 0.05 = \alpha$ por lo que no se acepta $H_0$,  
+es decir, hay evidencia estadística de que las supervivencias son distintas si el 
+número de ganglios con cáncer es mayor a 4.
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$node4), rho = 1, data = colon)
+```
+
+Se obtiene un $p-value  \leq 2e^{-16} < 0.05 = \alpha$, por tanto  se cuenta con evidencia 
+suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia  es distinta entre personas que tienen
+más de 4 ganglios con cáncer y las que no.
+
+Por lo  tanto, el tener más de 4 nodos es una variable que influye en la supervivencia.
+
+
+
+### \colorbox{cyan}{Por el tipo de evento.}
+
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$etype), rho = 0, data = colon)
+```
+
+Se obtiene un $p- value = 0.001 < 0.05 = \alpha$ por lo que no se acepta $H_0$,  
+es decir, hay evidencia estadística de que las supervivencias son distintas según si 
+tienen reinfección.
+
+\textbf{Prueba log-rank (Peto-Peto, Gehan-Wilxocon):}
+
+```{r, echo = FALSE, message = FALSE, include = TRUE, warning = FALSE}
+survdiff(Surv(time, status) ~ factor(colon$etype), rho = 1, data = colon)
+```
+
+Asú, se obtiene un $p-value = 2e^{-7} < 0.05 = \alpha$, por tanto  se cuenta con evidencia 
+suficiente para rechazar $H_0$.
+
+Por lo tanto, se concluye que la supervivencia  es distinta si hay reinfección.
+
+De esta manerra, el evento  es una variable que influye en la supervivencia.
+
+
+## \colorbox{cyan}{Prueba para contrastar la supervivencia.}
+
+En este caso hay que partir una población seleccionada.  Hay que probar si el tiempo de supervivencia es el mismo mediante alguna prueba de hipotesis.
+
+Se establece  un nivel de confianza del $95\%.$
+
+La variable que se usará para particionar la poblacion será la adherencia.
+(Hay que recordar que 0 implica que no hay adherencia del cáncer a otros órganos, y 
+1 implica que si hay adherencia.)
+
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+data_ad1 = subset(colon, colon$adhere == 0)
+data_ad2 = subset(colon, colon$adhere== 1)
+```
+
+En caso de que no haya adherencia:
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+
+ajuste_KM1 = survfit(Surv(data_ad1$time, data_ad1$status) ~ 1,
+                     type = "kaplan-meier", 
+                     conf.type = "plain", conf.int = 0.95,
+                     data = data_ad1)
+```
+
+Para el cálculo de la función de supervivencia, se tiene el apartado $survival$
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+summary(ajuste_KM1)
+```
+
+La gráfica es la siguiente
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+
+
+ggsurvplot(ajuste_KM1,
+          conf.int = TRUE,
+          risk.table = FALSE, 
+          linetype = 1, 
+          surv.median.line = "hv", 
+          ggtheme = theme_bw(), 
+          palette = "#1DACD6", 
+          legend.title = "Estimación de Kaplan-Meier", 
+          legend.labs = "Sin adherencia",
+          cumevents = FALSE, 
+          cumcensor = FALSE,
+          tables.height = 0.01,
+          xlab = "t", ylab = "S(t)")
+
+```
+
+En caso de que exista adherencia:
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+ajuste_KM2 = survfit(Surv(data_ad2$time, data_ad2$status) ~ 1,
+                     type = "kaplan-meier", 
+                     conf.type = "plain", conf.int = 0.95, 
+                     data = data_ad2)
+```
+
+Para el cálculo de la función de supervivencia, se tiene el apartado $survival$
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+summary(ajuste_KM2)
+```
+
+Para la gráfica:
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+
+ggsurvplot(ajuste_KM2,
+          conf.int = TRUE,
+          risk.table = FALSE, 
+          linetype = 1, 
+          surv.median.line = "hv", 
+          ggtheme = theme_bw(), 
+          palette = "#FF007F", 
+          legend.title = "Estimación de Kaplan-Meier", 
+          legend.labs = "Con adherencia",
+          cumevents = FALSE, 
+          cumcensor = FALSE,
+          tables.height = 0.01,
+          xlab = "t", ylab = "S(t)")
+
+```
+
+
+Si se recopilan ambas gráficas:
+
+```{r, echo = FALSE,include = TRUE, warning = FALSE, fig.align = 'center', fig.height= 5, fig.width=5}
+
+
+ggsurvplot_combine(list(ajuste_KM1, ajuste_KM2),
+                   ggtheme = theme_bw(), 
+                   legend.title = "Estimación de KM",
+                   legend.labs = c("Sin adherencia", "Con adherencia"),
+                   cumevents = FALSE, 
+                   cumcensor = FALSE,
+                   tables.height = 0.01,
+                   xlab = "t", ylab = "S(t)")
+```
+
+Se puede observar que la curva de las personas que tienen adherencia de cáncer en 
+otras partes de su cuerpo no se cruza con la curva de las personas que no tienen
+adherencia.
+
+Es por eso que gráficamente se podría concluir que no tienen la misma supervivencia.
+
+Elaborando las pruebas, se tienen las hipótesis:
+
+
+$$ H_0: S_j(t) = S_k(t) \text{ Para toda } t>0  \text{ y para toda j, k} $$ 
+
+$$vs$$     
+
+$$H_a: S_j(t) \neq S_k(t) \text{ para alguna } t>0 \text{ y para alguna } j \neq t$$
+\textbf{Prueba log-rank (Mantel-Haenszel):}
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+survdiff(Surv(colon$time, colon$status) ~ colon$adhere, rho = 0, data = colon)
+```
+
+Se obtiene un $p- value = 3e^{-4} < 0.05 = \alpha$ por lo que se rechaza $H_0$ a un nivel 
+de confianza del $95\%$, esto implica que si hay evidencia estadistica para decir que las
+supervivencias cambian según si existe o no adherencia de cáncer en otras zonas del paciente.
+
+\textbf{Prueba de Wilcoxon  - Peto-Peto:}
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+survdiff(Surv(colon$time, colon$status) ~ colon$adhere, rho = 1, data = colon)
+```
+
+Se obtiene un $p- value = 8e^{-4} < 0.05 = \alpha$ por lo que se rechaza $H_0$ a un nivel 
+de confianza del $95\%$, esto quiere decir que existe evidencia estadistica de que las supervivencias no son las mismas para personas que tengan adherencia de cáncer en otras 
+partes del cuerpo.
+
+
+Para ambas pruebas se rechaza la hipotesis nula, es decir, se puede concluir que la 
+supervivencia no es la misma si se presenta adherencia de cáncer en otras partes del cuerpo.
+
+Por lo tanto el tiempo de supervivencia es diferente si el paciente tiene adherencia
+de cáncer en otras partes de su cuerpo.
+
+
+## \colorbox{cyan}{Características adicionales.}
+
+Para calcular la falla de los pacientes:
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+
+survObject02 <- Surv(colon$time, colon$status==1)
+fit02 <- survfit(survObject ~ 1, type = "kaplan-meier", conf.type = "plain", 
+               conf.int = 0.95)
+summary(fit02)
+
+print(fit02, print.rmean = TRUE)
+```
+
+En este caso, la estimación de la supervivencia media es infinita 
+porque la curva de supervivencia no alcanza la línea del $50\%$ antes del 
+final del estudio.
+
+# \colorbox{Lavender}{3. Análisis de riesgos.}
+
+## \colorbox{Lavender}{Ajuste un modelo de riesgos proporcionales de Cox.}
+
+En este caso se busca definir la contribucion de las variables que fueron identificadas en el punto anterior al tiempo de supervivencia de los sujetos.
+
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+fit2 <- coxph(Surv(time,status) ~ factor(rx) + factor(age) + 
+                factor(obstruct) + factor(perfor) + factor(adhere) +
+                factor(nodes) + factor(differ) + factor(extent) +
+                factor(surg) + factor(node4) + factor(etype),colon)
+summary(fit2)
+```
+
+## \colorbox{Lavender}{¿Cuál es la estimación puntual para los coeficientes de regresion?}
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+fit2$coef
+```
+
+Interpretacion:
+
+- El factor $rx=2$ = 0.06103643 lo que indica que el fallecimiento tiene una relación que  
+  es directamente proporcional a la prescripción con levamisol.
+
+- El factor $rx=3$ = -0.41731407 lo que indica que el fallecimiento tiene una relación que
+  es inversamente proporcional a la prescripcion de levamisol + 5FU.
+  
+- En general, el factor $age$ indica que el fallecimiento de una persona tiene una relación
+  que es inversamente proporcional a la edad. Salvo la persona con mayor edad, la cual 
+  tiene una relación proporcional al fallecimiento.
+  
+- El factor $obstruct = 1$ 0.14261464 lo que indica que las personas que tengan obstrucción
+  en el colon, tienen mayor riesgo de fallecer que aquellas que no tienen obstrucción.
+  
+- El factor $perfor = 1$ = 0.05319636 lo que quiere decir que las personas que tengan
+  el colon perforado tienen mayor riesgo de fallecer que aquellas que no.
+  
+- El factor $adhere = 1$ = 0.17601941, lo que indica que las personas que tienen 
+  adherencia de cáncer en otras partes de su cuerpo, tienen mayor riesgo de morir.
+  
+- En general, el factor $nodes$ indica que el fallecimiento de una persona tiene una relación
+  que es inversamente proporcional a la cantidad de nodos que tenga.
+  
+- El factor $differ = 2$ = -0.06183545, lo que indica que el fallecimiento de la persona
+  está inversamente relacionado a que tenga un tumor moderado.
+  
+- El factor $differ = 3$ = 0.30626067 indica que el fallecimiento de la persona está
+  directamente relacionado a que tenga un tumor maligno.
+  
+- El factor $extent = 2$ = 0.12287824 lo que indica que el fallecimiento de la persona
+  está directamente relacionado a que sus músculos estén afectados por el cáncer.
+
+- El factor $extent = 3$ = 0.75906571 lo que indica que el fallecimiento de la persona
+  está directamente relacionado a que su tubo digestivo esté afectado por el cáncer.
+
+- El factor $extent = 4$ = 1.22379891 lo que indica que el fallecimiento de la persona
+  está muy directamente relacionado a que sus órganos estén afectados por el cáncer.
+
+- El factor $surg = 1$ = 0.25685364 lo que indica que las personas que tienen un mayor
+  de espera entre la cirugía y su estudio, tiene mayor riesgo de morir.
+
+- El factor $node4 = 1$ = 0.77178174 lo cual indica que las personas que presentan
+  más de 4 ganglios linfáticos infectados, tienen más riesgo de morir.
+
+## \colorbox{Lavender}{¿Las variables explicativas tienen o no efecto en el modelo?}
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+summary(fit2)
+```
+
+Para cada variable se obtiene un $p-value$ que contrasta las hipotesis:
+$$H_0: (\beta = 0) \text{ no significativa vs } H_a: (\beta \neq 0) \text{ es significativa }$$
+- Para factor(rx) los $p-value$ son distintos respecto al nivel de significancia, entonces
+  no se rechazaría $H_0$, lo cual indica que la variable $rx$ no tiene efecto en 
+  el modelo.
+
+- Para factor(age) los $p-value$ son distintos respecto al nivel de significancia, entonces
+  no se rechazaría $H_0$, lo cual indica que la variable $age$ no tiene efecto en 
+  el modelo.
+  
+- Para factor(obstruct = 1) el $p-value$ es mayor respecto al nivel de significancia, entonces
+  no se rechazaría $H_0$, lo cual indica que la variable $obstruct$ no tiene efecto en 
+  el modelo.
+  
+- Para factor(perfor = 1) el $p-value$ es mayor respecto al nivel de significancia, entonces
+  no se rechazaría $H_0$, lo cual indica que la variable $perfor$ no tiene efecto en 
+  el modelo.
+
+- Para factor(adhere = 1) el $p-value$ es mayor respecto al nivel de significancia, entonces
+  no se rechazaría $H_0$, lo cual indica que la variable $adhere$ no tiene efecto en 
+  el modelo.  
+  
+- Para factor(nodes) los $p-value$ son distintos respecto al nivel de significancia, entonces
+  no se rechazaría $H_0$, lo cual indica que la variable $nodes$ no tiene efecto en 
+  el modelo.
+  
+- Para factor(differ) los $p-value$ son distintos respecto al nivel de significancia, entonces
+  no se rechazaría $H_0$, lo cual indica que la variable $differ$ no tiene efecto en 
+  el modelo.
+  
+- Para factor(extent) los $p-value$ son distintos respecto al nivel de significancia, entonces
+  no se rechazaría $H_0$, lo cual indica que la variable $extent$ no tiene efecto en 
+  el modelo.
+  
+- Para factor(surg = 1) el $p-value$ es menor respecto al nivel de significancia, entonces
+  se rechazaría $H_0$, lo cual indica que la variable $surg$ si tiene efecto en 
+  el modelo.
+  
+- Para factor(node4 = 1) el $p-value$ es menor respecto al nivel de significancia, entonces
+  se rechazaría $H_0$, lo cual indica que la variable $node4$ si tiene efecto en 
+  el modelo.
+
+
+Finalmente y de manera general para las pruebas del Cociente de Verosimilitud, de Wald, 
+y de Score, al usar un nivel de significancia de $95\%$ se puede concluir que  las variables
+explicativas tienen efecto en el modelo. 
+
+Es decir, las variables una vez que interactuan  juntas tienen efecto en el modelo. 
+
+Por lo anterior se ajustará un nuevo modelo donde se removerán las variables no 
+significativas:
+
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+
+fit3 <- coxph(Surv(time,status)~factor(surg) + factor(node4),colon)
+
+summary(fit3)
+
+```
+
+Así:
+
+- Para $surg $ el  $p-value= 000172<0.05$, por lo que si afecta al modelo.
+
+- Para $node4$ el $p-value < 2e^{-16} <0.05$, por lo que afecta al modelo.
+
+De esta forma, se tienen que todas las variables afectan al modelo.
+
+
+## \colorbox{Lavender}{Intervalo de confianza para los coeficientes.}
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+confint(fit3, level= 0.95)
+```
+
+De donde, las variables no contienen al cero en sus intervalos de confianza, 
+por lo que son significativas en el modelo.
+
+
+## \colorbox{Lavender}{¿Cuál es la proporción del riesgo de falla?}
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+summary(fit3)
+```
+
+Se tiene que 
+
+- Para $factor(surg)1$ se tiene que $exp(coef) = 1.310$, lo que implica que el cambio 
+  de cociente de riesgos entre un paciente con una cirugía de mayor tiempo y otro que
+  tenga una cirugía de menor tiempo es de 1.310. Una cirugía de más tiempo atrás implica
+  un mayor riesgo de muerte.
+  
+- Para $factor(node4)1$ se tiene que $exp(coef) = 2.492$, lo que implica que el cambio 
+  de cociente de riesgos entre un paciente con más de 4 ganglios linfáticos afectados y
+  otro que no, es de 2.492. Una paciente con más de 4 nodos implica un mayor riesgo de muerte.
+
+
+## \colorbox{Lavender}{¿Existen sujetos que tienen un mayor riesgo?}
+
+Las personas que tienen mayor riesgo de fallecimiento son las que presentan una cirugía 
+de más tiempo atrás, asi como aquellos pacientes que tengan más de 4 ganglios linfáticos
+afectados.
+
+## \colorbox{Lavender}{Es valido tu modelo de acuerdo al supuesto de riesgos proporcionales?} 
+
+Se realizará la prueba que contrasta las hipotesis:
+
+$$H_0: \text{ los riesgos son proporcionales vs }H_a: \text{ los riesgos no son proporcionales}$$
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 5, fig.width=5}
+prba = cox.zph(fit3)
+prba
+```
+
+Si se trabaja con un nivel de significancia de al $95\%$, los $p-values < 0.05$ y por
+tanto, se rechazarían los riesgos proporcionales.
+
+En este caso se escogerá un nivel de significancia al $99\%$,  para asi concluir que
+los riesgos son proporcionales y entonces los residuales se verian como:
+
+```{r, echo = FALSE,include = TRUE, fig.align = 'center', fig.height= 4, fig.width=5}
+ggcoxzph(prba)
+```
+
+Se tomó esta medida debido a que con otros modelos propuestos los $p-values$ seguían siendo
+menores que 0.05.
+
+
+# Conclusión.
+
+El cáncer colorrectal es la segunda causa principal de muerte por cáncer en México y el tercero
+más frecuente dentro de la patología oncológica en la población general, afectando en igual
+proporción a hombres y mujeres. 
+
+A pesar de ser un problema en pacientes de edad avanzada con una media de diagnóstico de 50.8 años, cada día se detectan casos en gente más joven, de ahí la importancia de realizar un diagnóstico oportuno, lo que representa un gran reto en el conocimiento de la patología y actualización en el manejo adecuado, con la finalidad de aumentar la sobrevida y mejorar, en lo posible, la calidad de vida.
+
+# Referencias:
+
+- Tepper JE, O'Connell M, Niedzwiecki D, et al. Adjuvant therapy in rectal cancer:
+ Analysis of stage, sex and local control-Final report of intergroup 0114. J Clin Oncol
+ 2002;20:1744-50
